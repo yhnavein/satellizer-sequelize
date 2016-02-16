@@ -10,6 +10,7 @@ var request = require('request');
 var config = require('../config/config');
 var authHelper = require('../helpers/authHelper');
 var UserRepo = require('../repositories/UserRepository');
+var UserProviderRepo = require('../repositories/UserProviderRepository');
 
 var TOKEN_VALIDITY_DAYS = 30;
 
@@ -75,15 +76,6 @@ function createJWT(user) {
     token: jwt.encode(payload, config.tokenSecret)
   };
 }
-
-function getJwtFromRequest(req) {
-  if(!req.headers.authorization)
-    return null;
-
-  var token = req.headers.authorization.split(' ')[1];
-  return jwt.decode(token, config.tokenSecret);
-}
-
 
 router.get('/settings', function(req, res) {
   res.send(_clientSettings);
@@ -157,18 +149,11 @@ router.post('/google', function(req, res) {
 
     // Step 2. Retrieve profile information about the current user.
     request.get({ url: peopleApiUrl, headers: headers, json: true }, function(err1, response1, profile) {
-      console.log(profile);
-
       if (profile.error) {
         return res.status(500).send({message: profile.error.message});
       }
 
-      var payload = getJwtFromRequest(req);
-      var promise = (req.headers.authorization ?
-        UserRepo.linkGoogleProfile(payload.sub, profile) :
-        UserRepo.createAccFromGoogle(profile));
-
-      handleAuthPromise(res, promise);
+      handleAuthPromise(res, UserProviderRepo.handleProviderResponse(req, 'google', profile));
     });
   });
 });
@@ -195,13 +180,7 @@ router.post('/github', function(req, res) {
 
     // Step 2. Retrieve profile information about the current user.
     request.get({ url: userApiUrl, qs: accessToken, headers: headers, json: true }, function(err, response, profile) {
-      var payload = getJwtFromRequest(req);
-
-      var promise = (req.headers.authorization ?
-        UserRepo.linkGithubProfile(payload.sub, profile) :
-        UserRepo.createAccFromGithub(profile));
-
-      handleAuthPromise(res, promise);
+      handleAuthPromise(res, UserProviderRepo.handleProviderResponse(req, 'github', profile));
     });
   });
 });
@@ -234,12 +213,7 @@ router.post('/facebook', function(req, res) {
         return res.status(500).send({ message: profile.error.message });
       }
 
-      var payload = getJwtFromRequest(req);
-      var promise = (req.headers.authorization ?
-        UserRepo.linkFacebookProfile(payload.sub, profile) :
-        UserRepo.createAccFromFacebook(profile));
-
-      handleAuthPromise(res, promise);
+      handleAuthPromise(res, UserProviderRepo.handleProviderResponse(req, 'facebook', profile));
     });
   });
 });
@@ -294,12 +268,7 @@ router.post('/twitter', function(req, res) {
         oauth: profileOauth,
         json: true
       }, function(err, response, profile) {
-          var payload = getJwtFromRequest(req);
-          var promise = (req.headers.authorization ?
-            UserRepo.linkGithubProfile(payload.sub, profile) :
-            UserRepo.createAccFromGithub(profile));
-
-          handleAuthPromise(res, promise);
+        handleAuthPromise(res, UserProviderRepo.handleProviderResponse(req, 'twitter', profile));
       });
     });
   }
