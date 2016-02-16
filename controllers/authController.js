@@ -6,6 +6,7 @@ var jwt = require('jwt-simple');
 var moment = require('moment');
 var qs = require('querystring');
 var request = require('request');
+var async = require('neo-async');
 
 var config = require('../config/config');
 var authHelper = require('../helpers/authHelper');
@@ -208,8 +209,8 @@ router.post('/facebook', function(req, res) {
     }
 
     // Step 2. Retrieve profile information about the current user.
-    request.get({ url: graphApiUrl, qs: accessToken, json: true }, function(err, response, profile) {
-      if (response.statusCode !== 200) {
+    request.get({ url: graphApiUrl, qs: accessToken, json: true }, function(err1, response1, profile) {
+      if (response1.statusCode !== 200) {
         return res.status(500).send({ message: profile.error.message });
       }
 
@@ -263,11 +264,7 @@ router.post('/twitter', function(req, res) {
       };
 
       // Step 4. Retrieve profile information about the current user.
-      request.get({
-        url: profileUrl + accessToken.screen_name,
-        oauth: profileOauth,
-        json: true
-      }, function(err, response, profile) {
+      request.get({ url: profileUrl + accessToken.screen_name, oauth: profileOauth, json: true }, function(err1, response1, profile) {
         handleAuthPromise(res, UserProviderRepo.handleProviderResponse(req, 'twitter', profile));
       });
     });
@@ -292,50 +289,8 @@ router.post('/instagram', function(req, res) {
   };
 
   // Step 1. Exchange authorization code for access token.
-  request.post({ url: accessTokenUrl, form: params, json: true }, function(error, response, body) {
-
-    // Step 2a. Link user accounts.
-    if (req.headers.authorization) {
-      User.findOne({ instagram: body.user.id }, function(err, existingUser) {
-        if (existingUser) {
-          return res.status(409).send({ message: 'There is already an Instagram account that belongs to you' });
-        }
-
-        var token = req.headers.authorization.split(' ')[1];
-        var payload = jwt.decode(token, config.TOKEN_SECRET);
-
-        User.findById(payload.sub, function(err, user) {
-          if (!user) {
-            return res.status(400).send({ message: 'User not found' });
-          }
-          user.instagram = body.user.id;
-          user.picture = user.picture || body.user.profile_picture;
-          user.displayName = user.displayName || body.user.username;
-          user.save(function() {
-            var token = createJWT(user);
-            res.send({ token: token });
-          });
-        });
-      });
-    } else {
-      // Step 2b. Create a new user account or return an existing one.
-      User.findOne({ instagram: body.user.id }, function(err, existingUser) {
-        if (existingUser) {
-          return res.send({ token: createJWT(existingUser) });
-        }
-
-        var user = new User({
-          instagram: body.user.id,
-          picture: body.user.profile_picture,
-          displayName: body.user.username
-        });
-
-        user.save(function() {
-          var token = createJWT(user);
-          res.send({ token: token, user: user });
-        });
-      });
-    }
+  request.post({ url: accessTokenUrl, form: params, json: true }, function(error, response, profile) {
+    handleAuthPromise(res, UserProviderRepo.handleProviderResponse(req, 'instagram', profile));
   });
 });
 
@@ -360,51 +315,14 @@ router.post('/linkedin', function(req, res) {
     if (response.statusCode !== 200) {
       return res.status(response.statusCode).send({ message: body.error_description });
     }
-    var params = {
+    var oauthParams = {
       oauth2_access_token: body.access_token,
       format: 'json'
     };
 
     // Step 2. Retrieve profile information about the current user.
-    request.get({ url: peopleApiUrl, qs: params, json: true }, function(err, response, profile) {
-
-      // Step 3a. Link user accounts.
-      if (req.headers.authorization) {
-        User.findOne({ linkedin: profile.id }, function(err, existingUser) {
-          if (existingUser) {
-            return res.status(409).send({ message: 'There is already a LinkedIn account that belongs to you' });
-          }
-          var token = req.headers.authorization.split(' ')[1];
-          var payload = jwt.decode(token, config.TOKEN_SECRET);
-          User.findById(payload.sub, function(err, user) {
-            if (!user) {
-              return res.status(400).send({ message: 'User not found' });
-            }
-            user.linkedin = profile.id;
-            user.picture = user.picture || profile.pictureUrl;
-            user.displayName = user.displayName || profile.firstName + ' ' + profile.lastName;
-            user.save(function() {
-              var token = createJWT(user);
-              res.send({ token: token });
-            });
-          });
-        });
-      } else {
-        // Step 3b. Create a new user account or return an existing one.
-        User.findOne({ linkedin: profile.id }, function(err, existingUser) {
-          if (existingUser) {
-            return res.send({ token: createJWT(existingUser) });
-          }
-          var user = new User();
-          user.linkedin = profile.id;
-          user.picture = profile.pictureUrl;
-          user.displayName = profile.firstName + ' ' + profile.lastName;
-          user.save(function() {
-            var token = createJWT(user);
-            res.send({ token: token });
-          });
-        });
-      }
+    request.get({ url: peopleApiUrl, qs: oauthParams, json: true }, function(err1, response1, profile) {
+      handleAuthPromise(res, UserProviderRepo.handleProviderResponse(req, 'linkedin', profile));
     });
   });
 });
@@ -428,46 +346,11 @@ router.post('/yahoo', function(req, res) {
   // Step 1. Exchange authorization code for access token.
   request.post({ url: accessTokenUrl, form: formData, headers: headers, json: true }, function(err, response, body) {
     var socialApiUrl = 'https://social.yahooapis.com/v1/user/' + body.xoauth_yahoo_guid + '/profile?format=json';
-    var headers = { Authorization: 'Bearer ' + body.access_token };
+    var oauthHeaders = { Authorization: 'Bearer ' + body.access_token };
 
     // Step 2. Retrieve profile information about the current user.
-    request.get({ url: socialApiUrl, headers: headers, json: true }, function(err, response, body) {
-
-      // Step 3a. Link user accounts.
-      if (req.headers.authorization) {
-        User.findOne({ yahoo: body.profile.guid }, function(err, existingUser) {
-          if (existingUser) {
-            return res.status(409).send({ message: 'There is already a Yahoo account that belongs to you' });
-          }
-          var token = req.headers.authorization.split(' ')[1];
-          var payload = jwt.decode(token, config.TOKEN_SECRET);
-          User.findById(payload.sub, function(err, user) {
-            if (!user) {
-              return res.status(400).send({ message: 'User not found' });
-            }
-            user.yahoo = body.profile.guid;
-            user.displayName = user.displayName || body.profile.nickname;
-            user.save(function() {
-              var token = createJWT(user);
-              res.send({ token: token });
-            });
-          });
-        });
-      } else {
-        // Step 3b. Create a new user account or return an existing one.
-        User.findOne({ yahoo: body.profile.guid }, function(err, existingUser) {
-          if (existingUser) {
-            return res.send({ token: createJWT(existingUser) });
-          }
-          var user = new User();
-          user.yahoo = body.profile.guid;
-          user.displayName = body.profile.nickname;
-          user.save(function() {
-            var token = createJWT(user);
-            res.send({ token: token });
-          });
-        });
-      }
+    request.get({ url: socialApiUrl, headers: oauthHeaders, json: true }, function(err1, response1, profile) {
+      handleAuthPromise(res, UserProviderRepo.handleProviderResponse(req, 'yahoo', profile));
     });
   });
 });
@@ -501,41 +384,7 @@ router.post('/live', function(req, res) {
       });
     },
     function(profile) {
-      // Step 3a. Link user accounts.
-      if (req.headers.authorization) {
-        User.findOne({ live: profile.id }, function(err, user) {
-          if (user) {
-            return res.status(409).send({ message: 'There is already a Windows Live account that belongs to you' });
-          }
-          var token = req.headers.authorization.split(' ')[1];
-          var payload = jwt.decode(token, config.TOKEN_SECRET);
-          User.findById(payload.sub, function(err, existingUser) {
-            if (!existingUser) {
-              return res.status(400).send({ message: 'User not found' });
-            }
-            existingUser.live = profile.id;
-            existingUser.displayName = existingUser.displayName || profile.name;
-            existingUser.save(function() {
-              var token = createJWT(existingUser);
-              res.send({ token: token });
-            });
-          });
-        });
-      } else {
-        // Step 3b. Create a new user or return an existing account.
-        User.findOne({ live: profile.id }, function(err, user) {
-          if (user) {
-            return res.send({ token: createJWT(user) });
-          }
-          var newUser = new User();
-          newUser.live = profile.id;
-          newUser.displayName = profile.name;
-          newUser.save(function() {
-            var token = createJWT(newUser);
-            res.send({ token: token });
-          });
-        });
-      }
+      handleAuthPromise(res, UserProviderRepo.handleProviderResponse(req, 'live', profile));
     }
   ]);
 });
@@ -564,47 +413,8 @@ router.post('/foursquare', function(req, res) {
     };
 
     // Step 2. Retrieve information about the current user.
-    request.get({ url: profileUrl, qs: params, json: true }, function(err, response, profile) {
-      profile = profile.response.user;
-
-      // Step 3a. Link user accounts.
-      if (req.headers.authorization) {
-        User.findOne({ foursquare: profile.id }, function(err, existingUser) {
-          if (existingUser) {
-            return res.status(409).send({ message: 'There is already a Foursquare account that belongs to you' });
-          }
-          var token = req.headers.authorization.split(' ')[1];
-          var payload = jwt.decode(token, config.TOKEN_SECRET);
-          User.findById(payload.sub, function(err, user) {
-            if (!user) {
-              return res.status(400).send({ message: 'User not found' });
-            }
-            user.foursquare = profile.id;
-            user.picture = user.picture || profile.photo.prefix + '300x300' + profile.photo.suffix;
-            user.displayName = user.displayName || profile.firstName + ' ' + profile.lastName;
-            user.save(function() {
-              var token = createJWT(user);
-              res.send({ token: token });
-            });
-          });
-        });
-      } else {
-        // Step 3b. Create a new user account or return an existing one.
-        User.findOne({ foursquare: profile.id }, function(err, existingUser) {
-          if (existingUser) {
-            var token = createJWT(existingUser);
-            return res.send({ token: token });
-          }
-          var user = new User();
-          user.foursquare = profile.id;
-          user.picture = profile.photo.prefix + '300x300' + profile.photo.suffix;
-          user.displayName = profile.firstName + ' ' + profile.lastName;
-          user.save(function() {
-            var token = createJWT(user);
-            res.send({ token: token });
-          });
-        });
-      }
+    request.get({ url: profileUrl, qs: params, json: true }, function(err1, response1, profile) {
+      handleAuthPromise(res, UserProviderRepo.handleProviderResponse(req, 'foursquare', profile.response.user));
     });
   });
 });
@@ -632,47 +442,8 @@ router.post('/twitch', function(req, res) {
    };
 
     // Step 2. Retrieve information about the current user.
-    request.get({ url: profileUrl, qs: params, json: true }, function(err, response, profile) {
-      // Step 3a. Link user accounts.
-      if (req.headers.authorization) {
-        User.findOne({ twitch: profile._id }, function(err, existingUser) {
-          if (existingUser) {
-            return res.status(409).send({ message: 'There is already a Twitch account that belongs to you' });
-          }
-          var token = req.headers.authorization.split(' ')[1];
-          var payload = jwt.decode(token, config.TOKEN_SECRET);
-          User.findById(payload.sub, function(err, user) {
-            if (!user) {
-              return res.status(400).send({ message: 'User not found' });
-            }
-            user.twitch = profile._id;
-            user.picture = user.picture || profile.logo;
-            user.displayName = user.name || profile.name;
-            user.email = user.email || profile.email;
-            user.save(function() {
-              var token = createJWT(user);
-              res.send({ token: token });
-            });
-          });
-        });
-      } else {
-        // Step 3b. Create a new user account or return an existing one.
-        User.findOne({ twitch: profile._id }, function(err, existingUser) {
-          if (existingUser) {
-            var token = createJWT(existingUser);
-            return res.send({ token: token });
-          }
-          var user = new User();
-          user.twitch = profile._id;
-          user.picture = profile.logo;
-          user.displayName = profile.name;
-          user.email = profile.email;
-          user.save(function() {
-            var token = createJWT(user);
-            res.send({ token: token });
-          });
-        });
-      }
+    request.get({ url: profileUrl, qs: params, json: true }, function(err1, response1, profile) {
+      handleAuthPromise(res, UserProviderRepo.handleProviderResponse(req, 'twitch', profile));
     });
   });
 });
@@ -704,52 +475,12 @@ router.post('/bitbucket', function(req, res) {
     };
 
     // Step 2. Retrieve information about the current user.
-    request.get({ url: userApiUrl, qs: params, json: true }, function(err, response, profile) {
+    request.get({ url: userApiUrl, qs: params, json: true }, function(err1, response1, profile) {
 
       // Step 2.5. Retrieve current user's email.
-      request.get({ url: emailApiUrl, qs: params, json: true }, function(err, response, emails) {
-        var email = emails.values[0].email;
-
-        // Step 3a. Link user accounts.
-        if (req.headers.authorization) {
-          User.findOne({ bitbucket: profile.uuid }, function(err, existingUser) {
-            if (existingUser) {
-              return res.status(409).send({ message: 'There is already a Bitbucket account that belongs to you' });
-            }
-            var token = req.headers.authorization.split(' ')[1];
-            var payload = jwt.decode(token, config.TOKEN_SECRET);
-            User.findById(payload.sub, function(err, user) {
-              if (!user) {
-                return res.status(400).send({ message: 'User not found' });
-              }
-              user.bitbucket = profile.uuid;
-              user.email = user.email || email;
-              user.picture = user.picture || profile.links.avatar.href;
-              user.displayName = user.displayName || profile.display_name;
-              user.save(function() {
-                var token = createJWT(user);
-                res.send({ token: token });
-              });
-            });
-          });
-        } else {
-          // Step 3b. Create a new user account or return an existing one.
-          User.findOne({ bitbucket: profile.id }, function(err, existingUser) {
-            if (existingUser) {
-              var token = createJWT(existingUser);
-              return res.send({ token: token });
-            }
-            var user = new User();
-            user.bitbucket = profile.uuid;
-            user.email = email;
-            user.picture = profile.links.avatar.href;
-            user.displayName = profile.display_name;
-            user.save(function() {
-              var token = createJWT(user);
-              res.send({ token: token });
-            });
-          });
-        }
+      request.get({ url: emailApiUrl, qs: params, json: true }, function(err2, response2, emails) {
+        profile.email = emails.values[0].email;
+        handleAuthPromise(res, UserProviderRepo.handleProviderResponse(req, 'twitch', profile));
       });
     });
   });
@@ -763,7 +494,7 @@ router.post('/bitbucket', function(req, res) {
  */
 router.post('/unlink', authHelper.ensureAuthenticated, function(req, res) {
   var provider = req.body.provider;
-  var providers = ['facebook', 'google', 'github', 'twitter'];
+  var providers = ['google', 'facebook', 'twitter', 'github', 'instagram', 'linkedin', 'yahoo', 'live', 'foursquare'];
 
   if (providers.indexOf(provider) === -1) {
     return res.status(400).send({ message: 'Unknown OAuth Provider' });
