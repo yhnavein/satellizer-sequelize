@@ -1,23 +1,10 @@
 'use strict';
 
 var db = require('../models/sequelize');
-var mask = require('json-mask');
 
 var PSW_RESET_TOKEN_VALID_FOR = 3; //hours
 var ONE_HOUR = 3600000;
 var repo = {};
-
-function addAvatarToProfile(provider, url, profile) {
-  if(!profile.avatars)
-    profile.avatars = {};
-
-  if(!url || url.length < 1)
-    return;
-
-  profile.avatars[provider] = url;
-  if(!profile.picture)
-    profile.picture = url;
-}
 
 repo.getUserById = function(id) {
   return db.User.find({
@@ -33,7 +20,6 @@ repo.createUser = function(user) {
         throw 'Account with that email address already exists.';
 
       var dbUser = db.User.build(user);
-      dbUser.set('profile', {});
       return dbUser.save();
     });
 };
@@ -65,9 +51,8 @@ repo.changeAccountData = function(userId, reqBody) {
   return db.User.findById(userId)
     .then(function(user) {
       user.email = reqBody.email || '';
-      user.profile.name = reqBody.profile.name || '';
-      user.profile.picture = reqBody.profile.picture || '';
-      user.set('profile', user.profile);
+      user.name = reqBody.name || '';
+      user.avatarUrl = reqBody.avatarUrl || '';
 
       if(user.changed('email')) {
         return db.User.count({ where: { email: user.email } })
@@ -158,10 +143,8 @@ repo.linkFacebookProfile = function(userId, profile) {
     })
     .then(function(user) {
       user.facebookId = profileId;
-      if(!user.profile) user.profile = {};
-      user.profile.name = user.profile.name || profile.name;
-      addAvatarToProfile('facebook', 'https://graph.facebook.com/' + profileId + '/picture?type=large', user.profile);
-      user.set('profile', user.profile);
+      user.name = user.name || profile.name;
+      user.avatarUrl = 'https://graph.facebook.com/' + profileId + '/picture?type=large';
 
       return user.save();
     });
@@ -182,10 +165,8 @@ repo.createAccFromFacebook = function(profile) {
 
           var user = db.User.build({ facebookId: profileId });
           user.email = profile.email || ( profileId + '@facebook.com' );
-          user.profile = {
-            name: profile.name
-          };
-          addAvatarToProfile('facebook', 'https://graph.facebook.com/' + profileId + '/picture?type=large', user.profile);
+          user.name = profile.name;
+          user.avatarUrl = 'https://graph.facebook.com/' + profileId + '/picture?type=large';
           return user.save();
         });
     });
@@ -207,10 +188,8 @@ repo.linkGithubProfile = function(userId, profile) {
     })
     .then(function(user) {
       user.githubId = profileId;
-      if(!user.profile) user.profile = {};
-      user.profile.name = user.profile.name || profile.displayName;
-      addAvatarToProfile('github', profile.avatar_url, user.profile);
-      user.set('profile', user.profile);
+      user.name = user.name || profile.displayName;
+      user.avatarUrl = profile.avatar_url;
 
       return user.save();
     });
@@ -232,10 +211,8 @@ repo.createAccFromGithub = function(profile) {
 
           var user = db.User.build({ githubId: profileId });
           user.email = email;
-          user.profile = {
-            name: profile.name,
-          };
-          addAvatarToProfile('github', profile.avatar_url, user.profile);
+          user.name = profile.name;
+          user.avatarUrl = profile.avatar_url;
           return user.save();
         });
     });
@@ -254,10 +231,8 @@ repo.linkTwitterProfile = function(userId, profile) {
     })
     .then(function(user) {
       user.twitterId = profile.id.toString();
-      if(!user.profile) user.profile = {};
-      user.profile.name = user.profile.name || profile.name;
-      addAvatarToProfile('twitter', profile.profile_image_url_https, user.profile);
-      user.set('profile', user.profile);
+      user.name = user.name || profile.name;
+      user.avatarUrl = profile.profile_image_url_https;
 
       return user.save();
     });
@@ -271,10 +246,8 @@ repo.createAccFromTwitter = function(profile) {
 
       var user = db.User.build({ twitterId: profile.id.toString() });
       user.email = profile.screen_name + "@twitter.com";
-      user.profile = {
-        name: profile.displayName
-      };
-      addAvatarToProfile('twitter', profile.profile_image_url_https, user.profile);
+      user.name = profile.displayName;
+      user.avatarUrl = profile.profile_image_url_https;
       return user.save();
     });
 };
@@ -282,17 +255,6 @@ repo.createAccFromTwitter = function(profile) {
 
 /**
  * Google
- * Example Response:
- { kind: 'plus#personOpenIdConnect',
-  sub: '1234567890123456789',
-  name: 'Zgalowy Kategoriat',
-  given_name: 'Zgalowy',
-  family_name: 'Kategoriat',
-  picture: 'https://lh3.googleusercontent.com/-XdUIqdMkCWA/AAAAAAAAAAI/AAAAAAAAAAA/4252rscbv5M/photo.jpg?sz=50',
-  email: 'syf@puredev.eu',
-  email_verified: 'true',
-  locale: 'pl',
-  hd: 'puredev.eu' }
  */
 repo.linkGoogleProfile = function(userId, profile) {
   return db.User.findOne({ where: { googleId: profile.sub } })
@@ -304,10 +266,8 @@ repo.linkGoogleProfile = function(userId, profile) {
     })
     .then(function(user) {
       user.googleId = profile.sub;
-      if(!user.profile) user.profile = {};
-      user.profile.name = user.profile.name || profile.name;
-      addAvatarToProfile('google', (profile.picture.replace('sz=50', 'sz=200')), user.profile);
-      user.set('profile', user.profile);
+      user.name = user.name || profile.name;
+      user.avatarUrl = profile.picture.replace('sz=50', 'sz=200');
 
       return user.save();
     });
@@ -326,10 +286,8 @@ repo.createAccFromGoogle = function(profile) {
 
           var user = db.User.build({ googleId: profile.sub });
           user.email = profile.email;
-          user.profile = {
-            name: profile.name
-          };
-          addAvatarToProfile('google', (profile.picture.replace('sz=50', 'sz=200')), user.profile);
+          user.name = profile.name;
+          user.avatarUrl = profile.picture.replace('sz=50', 'sz=200');
           return user.save();
         });
     });
@@ -348,12 +306,8 @@ repo.linkLinkedInProfile = function(userId, accessToken, tokenSecret, profile) {
     })
     .then(function(user) {
       user.linkedInId = profile.id.toString();
-      if(!user.profile) user.profile = {};
-      user.profile.name = user.profile.name || profile.displayName;
-      user.profile.location = user.profile.location || (profile._json.location) ? profile._json.location.name : '';
-      addAvatarToProfile('linkedin', profile._json.pictureUrl, user.profile);
-      user.profile.website = user.profile.website || profile._json.publicProfileUrl;
-      user.set('profile', user.profile);
+      user.name = user.name || profile.displayName;
+      user.avatarUrl = profile.pictureUrl;
 
       return user.save();
     });
@@ -365,19 +319,15 @@ repo.createAccFromLinkedIn = function(accessToken, tokenSecret, profile) {
       if (existingUser)
         return existingUser;
 
-      return db.User.findOne({ where: { email: profile._json.emailAddress } })
+      return db.User.findOne({ where: { email: profile.emailAddress } })
         .then(function(existingEmailUser) {
           if (existingEmailUser)
             throw 'There is already an account using this email address. Sign in to that account and link it with LinkedIn manually from Account Settings.';
 
           var user = db.User.build({ linkedInId: profile.id.toString() });
-          user.email = profile._json.emailAddress;
-          user.profile = {
-            name: profile.displayName,
-            location: (profile._json.location) ? profile._json.location.name : '',
-            website: profile._json.publicProfileUrl
-          };
-          addAvatarToProfile('linkedin', profile._json.pictureUrl, user.profile);
+          user.email = profile.emailAddress;
+          user.name = profile.displayName;
+          user.avatarUrl = profile.pictureUrl;
           return user.save();
         });
     });

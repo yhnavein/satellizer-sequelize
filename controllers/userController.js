@@ -9,11 +9,6 @@ var authHelper = require('../helpers/authHelper');
 router.get('/me', authHelper.ensureAuthenticated, function(req, res) {
   UserRepo.getUserById(req.user)
     .then(function(user) {
-      if(!user.profile.avatars)
-        user.profile.avatars = {};
-
-      user.profile.avatars.gravatar = user.getGravatarUrl(128);
-
       res.send(user);
     })
     .catch(function(err) {
