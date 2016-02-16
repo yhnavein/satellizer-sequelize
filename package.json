@@ -1,0 +1,27 @@
+{
+  "name": "satellizer-sequelize",
+  "version": "0.0.1",
+  "private": false,
+  "scripts": {
+    "test": ""
+  },
+  "author": "Piotr Dabrowski, PureDev",
+  "main": "server.js",
+  "dependencies": {
+    "bcrypt-nodejs": "^0.0.3",
+    "bluebird": "^3.2.2",
+    "body-parser": "^1.15.0",
+    "cors": "^2.7.1",
+    "express": "^4.13.4",
+    "json-mask": "^0.3.5",
+    "jwt-simple": "^0.4.1",
+    "lodash": "^4.3.0",
+    "moment": "^2.11.2",
+    "morgan": "^1.6.1",
+    "neo-async": "^1.7.2",
+    "pg": "^4.4.4",
+    "pg-hstore": "^2.3.2",
+    "request": "^2.69.0",
+    "sequelize": "^3.19.2"
+  }
+}
