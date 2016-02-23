@@ -180,7 +180,7 @@ router.post('/github', function(req, res) {
     var headers = { 'User-Agent': 'Satellizer' };
 
     // Step 2. Retrieve profile information about the current user.
-    request.get({ url: userApiUrl, qs: accessToken, headers: headers, json: true }, function(err, response, profile) {
+    request.get({ url: userApiUrl, qs: accessToken, headers: headers, json: true }, function(err1, response1, profile) {
       handleAuthPromise(res, UserProviderRepo.handleProviderResponse(req, 'github', profile));
     });
   });

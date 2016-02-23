@@ -1,5 +1,7 @@
 'use strict';
 
+var Promise = require('bluebird');
+
 var db = require('../models/sequelize');
 
 var PSW_RESET_TOKEN_VALID_FOR = 3; //hours
@@ -17,7 +19,7 @@ repo.createUser = function(user) {
   return db.User.count({ where: { email: user.email } })
     .then(function(c) {
       if (c > 0)
-        throw 'Account with that email address already exists.';
+        return Promise.reject('Account with that email address already exists.');
 
       var dbUser = db.User.build(user);
       return dbUser.save();
@@ -38,7 +40,7 @@ repo.assignResetPswToken = function(email, token) {
   return db.User.findOne({ where: { email: email } })
     .then(function(user) {
       if(!user)
-        throw 'No account with that email address exists.';
+        return Promise.reject('No account with that email address exists.');
 
       user.resetPasswordToken = token;
       user.resetPasswordExpires = Date.now() + PSW_RESET_TOKEN_VALID_FOR * ONE_HOUR;
@@ -58,7 +60,7 @@ repo.changeAccountData = function(userId, reqBody) {
         return db.User.count({ where: { email: user.email } })
           .then(function(c) {
             if(c > 0)
-              throw 'Cannot change e-mail address, because address ' + user.email + ' already exists';
+              return Promise.reject('Cannot change e-mail address, because address ' + user.email + ' already exists');
 
             return user.save();
           });
@@ -85,7 +87,7 @@ repo.changeUserPassword = function(userId, newPassword) {
   return db.User.findById(userId)
     .then(function(user) {
       if(!user)
-        throw 'Account not found';
+        return Promise.reject('Account not found');
 
       user.password = newPassword;
 
@@ -95,7 +97,7 @@ repo.changeUserPassword = function(userId, newPassword) {
 
 repo.changeUserPswAndResetToken = function(token, newPassword) {
   if(!token || token.length < 1)
-    throw 'Token cannot be empty!';
+    return Promise.reject('Token cannot be empty!');
 
   return db.User.findOne({
       where: {
@@ -105,7 +107,7 @@ repo.changeUserPswAndResetToken = function(token, newPassword) {
     })
     .then(function(user) {
       if(!user)
-        throw 'User was not found.';
+        return Promise.reject('User was not found.');
 
       user.password = newPassword;
       user.set('resetPasswordToken', null);
@@ -116,10 +118,11 @@ repo.changeUserPswAndResetToken = function(token, newPassword) {
 };
 
 repo.unlinkProviderFromAccount = function(provider, userId) {
+
   return db.User.findById(userId)
     .then(function(user) {
       if(!user)
-        throw 'User was not found.';
+        return Promise.reject('User was not found.');
 
       var attrInfo = {};
       attrInfo[provider + 'Id'] = null;
